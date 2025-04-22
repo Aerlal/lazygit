@@ -10,7 +10,7 @@ import (
 // Special commit hash for empty tree object
 const EmptyTreeCommitHash = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
-type CommitStatus int
+type CommitStatus uint8
 
 const (
 	StatusNone CommitStatus = iota
@@ -29,7 +29,7 @@ const (
 	ActionNone todo.TodoCommand = 0
 )
 
-type Divergence int
+type Divergence uint8
 
 // For a divergence log (left/right comparison of two refs) this is set to
 // either DivergenceLeft or DivergenceRight for each commit; for normal
@@ -42,35 +42,36 @@ const (
 
 // Commit : A git commit
 type Commit struct {
-	Hash          string
+	Hash          *string
 	Name          string
-	Status        CommitStatus
-	Action        todo.TodoCommand
 	Tags          []string
 	ExtraInfo     string // something like 'HEAD -> master, tag: v0.15.2'
 	AuthorName    string // something like 'Jesse Duffield'
 	AuthorEmail   string // something like 'jessedduffield@gmail.com'
 	UnixTimestamp int64
-	Divergence    Divergence // set to DivergenceNone unless we are showing the divergence view
 
 	// Hashes of parent commits (will be multiple if it's a merge commit)
-	Parents []string
+	Parents []*string
+
+	Status     CommitStatus
+	Action     todo.TodoCommand
+	Divergence Divergence // set to DivergenceNone unless we are showing the divergence view
 }
 
 func (c *Commit) ShortHash() string {
-	return utils.ShortHash(c.Hash)
+	return utils.ShortHash(*c.Hash)
 }
 
 func (c *Commit) FullRefName() string {
-	return c.Hash
+	return *c.Hash
 }
 
 func (c *Commit) RefName() string {
-	return c.Hash
+	return *c.Hash
 }
 
 func (c *Commit) ShortRefName() string {
-	return c.Hash[:7]
+	return (*c.Hash)[:7]
 }
 
 func (c *Commit) ParentRefName() string {
@@ -89,7 +90,7 @@ func (c *Commit) ID() string {
 }
 
 func (c *Commit) Description() string {
-	return fmt.Sprintf("%s %s", c.Hash[:7], c.Name)
+	return fmt.Sprintf("%s %s", (*c.Hash)[:7], c.Name)
 }
 
 func (c *Commit) IsMerge() bool {

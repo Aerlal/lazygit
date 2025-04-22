@@ -46,7 +46,7 @@ func NewSubCommitsContext(
 			return [][]string{}
 		}
 
-		selectedCommitHash := ""
+		var selectedCommitHash *string
 		if c.Context().Current().GetKey() == SUB_COMMITS_CONTEXT_KEY {
 			selectedCommit := viewModel.GetSelected()
 			if selectedCommit != nil {
@@ -60,6 +60,7 @@ func NewSubCommitsContext(
 		hasRebaseUpdateRefsConfig := c.Git().Config.GetRebaseUpdateRefs()
 		return presentation.GetCommitListDisplayStrings(
 			c.Common,
+			&c.Model().HashPool,
 			c.Model().SubCommits,
 			branches,
 			viewModel.GetRef().RefName(),
@@ -221,7 +222,7 @@ func (self *SubCommitsContext) RefForAdjustingLineNumberInDiff() string {
 	if commits == nil {
 		return ""
 	}
-	return commits[0].Hash
+	return *commits[0].Hash
 }
 
 func (self *SubCommitsContext) ModelSearchResults(searchStr string, caseSensitive bool) []gocui.SearchPosition {

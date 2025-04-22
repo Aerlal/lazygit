@@ -32,7 +32,7 @@ func NewLocalCommitsContext(c *ContextCommon) *LocalCommitsContext {
 	)
 
 	getDisplayStrings := func(startIdx int, endIdx int) [][]string {
-		selectedCommitHash := ""
+		var selectedCommitHash *string
 
 		if c.Context().Current().GetKey() == LOCAL_COMMITS_CONTEXT_KEY {
 			selectedCommit := viewModel.GetSelected()
@@ -45,6 +45,7 @@ func NewLocalCommitsContext(c *ContextCommon) *LocalCommitsContext {
 
 		return presentation.GetCommitListDisplayStrings(
 			c.Common,
+			&c.Model().HashPool,
 			c.Model().Commits,
 			c.Model().Branches,
 			c.Model().CheckedOutBranch,
@@ -192,7 +193,7 @@ func (self *LocalCommitsContext) GetSelectedCommitHash() string {
 	if commit == nil {
 		return ""
 	}
-	return commit.Hash
+	return *commit.Hash
 }
 
 func (self *LocalCommitsContext) SelectCommitByHash(hash string) bool {
@@ -200,7 +201,7 @@ func (self *LocalCommitsContext) SelectCommitByHash(hash string) bool {
 		return false
 	}
 
-	if _, idx, found := lo.FindIndexOf(self.GetItems(), func(c *models.Commit) bool { return c.Hash == hash }); found {
+	if _, idx, found := lo.FindIndexOf(self.GetItems(), func(c *models.Commit) bool { return *c.Hash == hash }); found {
 		self.SetSelection(idx)
 		return true
 	}
@@ -219,7 +220,7 @@ func (self *LocalCommitsContext) RefForAdjustingLineNumberInDiff() string {
 	if commits == nil {
 		return ""
 	}
-	return commits[0].Hash
+	return *commits[0].Hash
 }
 
 func (self *LocalCommitsContext) ModelSearchResults(searchStr string, caseSensitive bool) []gocui.SearchPosition {
@@ -284,7 +285,7 @@ func searchModelCommits(caseSensitive bool, commits []*models.Commit, columnPosi
 		// that we render. So we just set the XStart and XEnd values to the
 		// start and end of the commit hash column, which is the second one.
 		result := gocui.SearchPosition{XStart: columnPositions[1], XEnd: columnPositions[2] - 1, Y: idx}
-		return result, strings.Contains(normalize(commit.Hash), searchStr) ||
+		return result, strings.Contains(normalize(*commit.Hash), searchStr) ||
 			strings.Contains(normalize(commit.Name), searchStr) ||
 			strings.Contains(normalize(commit.ExtraInfo), searchStr) // allow searching for tags
 	})

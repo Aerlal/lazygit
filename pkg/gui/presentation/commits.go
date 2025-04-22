@@ -28,7 +28,7 @@ type pipeSetCacheKey struct {
 }
 
 var (
-	pipeSetCache = make(map[pipeSetCacheKey][][]*graph.Pipe)
+	pipeSetCache = make(map[pipeSetCacheKey][][]graph.Pipe)
 	mutex        deadlock.Mutex
 )
 
@@ -39,6 +39,7 @@ type bisectBounds struct {
 
 func GetCommitListDisplayStrings(
 	common *common.Common,
+	hashPool *utils.StringPool,
 	commits []*models.Commit,
 	branches []*models.Branch,
 	currentBranchName string,
@@ -51,7 +52,7 @@ func GetCommitListDisplayStrings(
 	shortTimeFormat string,
 	now time.Time,
 	parseEmoji bool,
-	selectedCommitHash string,
+	selectedCommitHash *string,
 	startIdx int,
 	endIdx int,
 	showGraph bool,
@@ -92,7 +93,7 @@ func GetCommitListDisplayStrings(
 
 			if localSectionStart > 0 {
 				// we have some remote commits
-				pipeSets := loadPipesets(commits[:localSectionStart])
+				pipeSets := loadPipesets(hashPool, commits[:localSectionStart])
 				if startIdx < localSectionStart {
 					// some of the remote commits are visible
 					start := startIdx
@@ -109,7 +110,7 @@ func GetCommitListDisplayStrings(
 			}
 			if localSectionStart < len(commits) {
 				// we have some local commits
-				pipeSets := loadPipesets(commits[localSectionStart:])
+				pipeSets := loadPipesets(hashPool, commits[localSectionStart:])
 				if localSectionStart < endIdx {
 					// some of the local commits are visible
 					graphOffset := max(startIdx, localSectionStart)
@@ -133,7 +134,7 @@ func GetCommitListDisplayStrings(
 			// but we'll never include TODO commits as part of the graph because it'll be messy)
 			graphOffset := max(startIdx, rebaseOffset)
 
-			pipeSets := loadPipesets(commits[rebaseOffset:])
+			pipeSets := loadPipesets(hashPool, commits[rebaseOffset:])
 			pipeSetOffset := max(startIdx-rebaseOffset, 0)
 			graphPipeSets := pipeSets[pipeSetOffset:max(endIdx-rebaseOffset, 0)]
 			graphCommits := commits[graphOffset:endIdx]
@@ -175,7 +176,7 @@ func GetCommitListDisplayStrings(
 					!lo.Contains(common.UserConfig().Git.MainBranches, b.Name) &&
 					// Don't show a marker for the head commit unless the
 					// rebase.updateRefs config is on
-					(hasRebaseUpdateRefsConfig || b.CommitHash != commits[0].Hash)
+					(hasRebaseUpdateRefsConfig || b.CommitHash != *commits[0].Hash)
 		}))
 
 	lines := make([][]string, 0, len(filteredCommits))
@@ -183,8 +184,8 @@ func GetCommitListDisplayStrings(
 	willBeRebased := markedBaseCommit == ""
 	for i, commit := range filteredCommits {
 		unfilteredIdx := i + startIdx
-		bisectStatus = getBisectStatus(unfilteredIdx, commit.Hash, bisectInfo, bisectBounds)
-		isMarkedBaseCommit := commit.Hash != "" && commit.Hash == markedBaseCommit
+		bisectStatus = getBisectStatus(unfilteredIdx, *commit.Hash, bisectInfo, bisectBounds)
+		isMarkedBaseCommit := *commit.Hash != "" && *commit.Hash == markedBaseCommit
 		if isMarkedBaseCommit {
 			willBeRebased = true
 		}
@@ -218,11 +219,11 @@ func getbisectBounds(commits []*models.Commit, bisectInfo *git_commands.BisectIn
 	bisectBounds := &bisectBounds{}
 
 	for i, commit := range commits {
-		if commit.Hash == bisectInfo.GetNewHash() {
+		if *commit.Hash == bisectInfo.GetNewHash() {
 			bisectBounds.newIndex = i
 		}
 
-		status, ok := bisectInfo.Status(commit.Hash)
+		status, ok := bisectInfo.Status(*commit.Hash)
 		if ok && status == git_commands.BisectStatusOld {
 			bisectBounds.oldIndex = i
 			return bisectBounds
@@ -245,11 +246,11 @@ func indexOfFirstNonTODOCommit(commits []*models.Commit) int {
 	return 0
 }
 
-func loadPipesets(commits []*models.Commit) [][]*graph.Pipe {
+func loadPipesets(hashPool *utils.StringPool, commits []*models.Commit) [][]graph.Pipe {
 	// given that our cache key is a commit hash and a commit count, it's very important that we don't actually try to render pipes
 	// when dealing with things like filtered commits.
 	cacheKey := pipeSetCacheKey{
-		commitHash:  commits[0].Hash,
+		commitHash:  *commits[0].Hash,
 		commitCount: len(commits),
 		divergence:  commits[0].Divergence,
 	}
@@ -258,10 +259,10 @@ func loadPipesets(commits []*models.Commit) [][]*graph.Pipe {
 	if !ok {
 		// pipe sets are unique to a commit head. and a commit count. Sometimes we haven't loaded everything for that.
 		// so let's just cache it based on that.
-		getStyle := func(commit *models.Commit) style.TextStyle {
+		getStyle := func(commit *models.Commit) *style.TextStyle {
 			return authors.AuthorStyle(commit.AuthorName)
 		}
-		pipeSets = graph.GetPipeSets(commits, getStyle)
+		pipeSets = graph.GetPipeSets(hashPool, commits, getStyle)
 		pipeSetCache[cacheKey] = pipeSets
 	}
 
@@ -363,10 +364,10 @@ func displayCommit(
 	hashString := ""
 	hashColor := getHashColor(commit, diffName, cherryPickedCommitHashSet, bisectStatus, bisectInfo)
 	hashLength := common.UserConfig().Gui.CommitHashLength
-	if hashLength >= len(commit.Hash) {
-		hashString = hashColor.Sprint(commit.Hash)
+	if hashLength >= len(*commit.Hash) {
+		hashString = hashColor.Sprint(*commit.Hash)
 	} else if hashLength > 0 {
-		hashString = hashColor.Sprint(commit.Hash[:hashLength])
+		hashString = hashColor.Sprint((*commit.Hash)[:hashLength])
 	} else if !icons.IsIconEnabled() { // hashLength <= 0
 		hashString = hashColor.Sprint("*")
 	}
@@ -400,7 +401,7 @@ func displayCommit(
 			tagString = theme.DiffTerminalColor.SetBold().Sprint(strings.Join(commit.Tags, " ")) + " "
 		}
 
-		if branchHeadsToVisualize.Includes(commit.Hash) &&
+		if branchHeadsToVisualize.Includes(*commit.Hash) &&
 			// Don't show branch head on commits that are already merged to a main branch
 			commit.Status != models.StatusMerged &&
 			// Don't show branch head on a "pick" todo if the rebase.updateRefs config is on
@@ -482,7 +483,7 @@ func getHashColor(
 		return getBisectStatusColor(bisectStatus)
 	}
 
-	diffed := commit.Hash != "" && commit.Hash == diffName
+	diffed := *commit.Hash != "" && *commit.Hash == diffName
 	hashColor := theme.DefaultTextColor
 	switch commit.Status {
 	case models.StatusUnpushed:
@@ -500,7 +501,7 @@ func getHashColor(
 
 	if diffed {
 		hashColor = theme.DiffTerminalColor
-	} else if cherryPickedCommitHashSet.Includes(commit.Hash) {
+	} else if cherryPickedCommitHashSet.Includes(*commit.Hash) {
 		hashColor = theme.CherryPickedCommitTextStyle
 	} else if commit.Divergence == models.DivergenceRight && commit.Status != models.StatusMerged {
 		hashColor = style.FgBlue

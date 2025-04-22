@@ -7,6 +7,8 @@ import (
 	"github.com/jesseduffield/lazygit/pkg/commands/models"
 	"github.com/jesseduffield/lazygit/pkg/commands/oscommands"
 	"github.com/jesseduffield/lazygit/pkg/common"
+	"github.com/jesseduffield/lazygit/pkg/utils"
+	"github.com/samber/lo"
 )
 
 type ReflogCommitLoader struct {
@@ -23,14 +25,14 @@ func NewReflogCommitLoader(common *common.Common, cmd oscommands.ICmdObjBuilder)
 
 // GetReflogCommits only returns the new reflog commits since the given lastReflogCommit
 // if none is passed (i.e. it's value is nil) then we get all the reflog commits
-func (self *ReflogCommitLoader) GetReflogCommits(lastReflogCommit *models.Commit, filterPath string, filterAuthor string) ([]*models.Commit, bool, error) {
+func (self *ReflogCommitLoader) GetReflogCommits(hashPool *utils.StringPool, lastReflogCommit *models.Commit, filterPath string, filterAuthor string) ([]*models.Commit, bool, error) {
 	commits := make([]*models.Commit, 0)
 
 	cmdArgs := NewGitCmd("log").
 		Config("log.showSignature=false").
 		Arg("-g").
 		Arg("--abbrev=40").
-		Arg("--format=%h%x00%ct%x00%gs%x00%p").
+		Arg("--format=%h%x00%ct%x00%gs%x00%P").
 		ArgIf(filterAuthor != "", "--author="+filterAuthor).
 		ArgIf(filterPath != "", "--follow", "--", filterPath).
 		ToArgv()
@@ -39,7 +41,7 @@ func (self *ReflogCommitLoader) GetReflogCommits(lastReflogCommit *models.Commit
 
 	onlyObtainedNewReflogCommits := false
 	err := cmdObj.RunAndProcessLines(func(line string) (bool, error) {
-		commit, ok := self.parseLine(line)
+		commit, ok := self.parseLine(hashPool, line)
 		if !ok {
 			return false, nil
 		}
@@ -68,7 +70,7 @@ func (self *ReflogCommitLoader) sameReflogCommit(a *models.Commit, b *models.Com
 	return a.Hash == b.Hash && a.UnixTimestamp == b.UnixTimestamp && a.Name == b.Name
 }
 
-func (self *ReflogCommitLoader) parseLine(line string) (*models.Commit, bool) {
+func (self *ReflogCommitLoader) parseLine(hashPool *utils.StringPool, line string) (*models.Commit, bool) {
 	fields := strings.SplitN(line, "\x00", 4)
 	if len(fields) <= 3 {
 		return nil, false
@@ -77,13 +79,15 @@ func (self *ReflogCommitLoader) parseLine(line string) (*models.Commit, bool) {
 	unixTimestamp, _ := strconv.Atoi(fields[1])
 
 	parentHashes := fields[3]
-	parents := []string{}
+	parents := []*string{}
 	if len(parentHashes) > 0 {
-		parents = strings.Split(parentHashes, " ")
+		parents = lo.Map(strings.Split(parentHashes, " "), func(hash string, _ int) *string {
+			return hashPool.Add(hash)
+		})
 	}
 
 	return &models.Commit{
-		Hash:          fields[0],
+		Hash:          hashPool.Add(fields[0]),
 		Name:          fields[2],
 		UnixTimestamp: int64(unixTimestamp),
 		Status:        models.StatusReflog,
