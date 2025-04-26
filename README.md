@@ -8,7 +8,7 @@
   </div>
   <b>Warp, the intelligent terminal</b>
   <br>
-  <b>Available for MacOS and Linux</b>
+  <b>Available for MacOS, Windows and Linux</b>
   <br>
   <div>
     <sup>Visit warp.dev to learn more.</sup>
